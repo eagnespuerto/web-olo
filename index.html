@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>olo — a color beyond sRGB</title>
+<style>
+  :root {
+    --bg: #0b0d10;
+    --panel: #14181d;
+    --ink: #e6eaee;
+    --muted: #8a94a1;
+    --rule: #232a32;
+    --accent: #00ffd1;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg:#f6f7f9; --panel:#fff; --ink:#101418; --muted:#5a6472; --rule:#e6e9ee; }
+  }
+  html, body { background: var(--bg); color: var(--ink); }
+  body {
+    font-family: var(--sans);
+    line-height: 1.55;
+    margin: 0;
+    padding: 48px 24px 96px;
+    display: flex; justify-content: center;
+  }
+  main { width: 100%; max-width: 760px; }
+  h1 { font-size: clamp(32px, 5vw, 44px); margin: 0 0 4px; letter-spacing: -0.02em; }
+  h2 { font-size: 15px; text-transform: uppercase; letter-spacing: 0.12em; color: var(--muted); font-weight: 600; margin: 40px 0 12px; }
+  p { margin: 10px 0; }
+  .lede { color: var(--muted); font-size: 17px; margin-bottom: 32px; }
+  .swatches { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin: 20px 0 8px; }
+  .sw { border-radius: 12px; overflow: hidden; border: 1px solid var(--rule); background: var(--panel); }
+  .sw .fill { height: 140px; }
+  .sw .meta { padding: 12px 14px; font-family: var(--mono); font-size: 13px; color: var(--muted); }
+  .sw .meta b { color: var(--ink); font-weight: 600; display: block; margin-bottom: 2px; font-family: var(--sans); font-size: 14px; }
+  .caveat { font-size: 13px; color: var(--muted); margin-top: 4px; }
+  pre.math {
+    font-family: var(--mono); font-size: 12.5px; line-height: 1.5;
+    background: var(--panel); border: 1px solid var(--rule); border-radius: 10px;
+    padding: 14px 16px; overflow-x: auto; margin: 8px 0;
+  }
+  .step { margin: 18px 0; }
+  .step .label { font-family: var(--mono); font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; font-family: var(--mono); font-size: 13px; }
+  .chip { padding: 4px 10px; border: 1px solid var(--rule); border-radius: 999px; color: var(--muted); }
+  .chip b { color: var(--ink); font-weight: 500; }
+  a { color: var(--accent); text-decoration: none; border-bottom: 1px solid transparent; }
+  a:hover { border-bottom-color: currentColor; }
+  hr { border: 0; border-top: 1px solid var(--rule); margin: 32px 0; }
+  footer { color: var(--muted); font-size: 13px; margin-top: 40px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>olo</h1>
+  <p class="lede">In April 2025, Berkeley researchers stimulated a single cone class in the human retina and reported a color no natural light can produce. This page approximates it the only way a screen can — by running the cone response through the standard CIE and sRGB matrix chain, then honestly showing what falls off the edge of the gamut.</p>
+
+  <h2>The approximation</h2>
+  <div class="swatches">
+    <div class="sw">
+      <div class="fill" id="fill-clipped"></div>
+      <div class="meta"><b>Naive clip</b><span id="hex-clipped">#000000</span></div>
+    </div>
+    <div class="sw">
+      <div class="fill" id="fill-mapped"></div>
+      <div class="meta"><b>Gamut-mapped</b><span id="hex-mapped">#000000</span></div>
+    </div>
+  </div>
+  <p class="caveat">Neither swatch is olo. The real color sits outside every triangle your display can draw. The right swatch is what remains after we slide the point back into sRGB along the white axis — desaturated, but pointing the same way.</p>
+
+  <h2>Cone stimulus</h2>
+  <p>The Berkeley team hit only medium-wavelength (M) cones, leaving L and S dark. In LMS cone space this is a basis vector:</p>
+  <pre class="math">LMS = [ 0, 1, 0 ]         # M-only stimulation</pre>
+
+  <h2>LMS → XYZ (Hunt-Pointer-Estevez, D65)</h2>
+  <p>Invert the HPE cone-fundamentals matrix and apply:</p>
+  <pre class="math">M_HPE⁻¹ · LMS =
+[  1.86007  -1.12948   0.21990 ]   [ 0 ]     [ -1.12948 ]
+[  0.36122   0.63881  -0.00006 ] · [ 1 ]  =  [  0.63881 ]
+[  0        0         1.08909  ]   [ 0 ]     [  0       ]</pre>
+  <div class="row"><span class="chip">X = <b id="X">–</b></span><span class="chip">Y = <b id="Y">–</b></span><span class="chip">Z = <b id="Z">–</b></span></div>
+  <p class="caveat">X is already negative — a first signal the point lies outside physically realisable stimuli under this basis.</p>
+
+  <h2>XYZ → linear sRGB (Bradford D65)</h2>
+  <pre class="math">M_sRGB · XYZ =
+[  3.2406  -1.5372  -0.4986 ]
+[ -0.9689   1.8758   0.0415 ] · XYZ
+[  0.0557  -0.2040   1.0570 ]</pre>
+  <div class="row"><span class="chip">R = <b id="Rl">–</b></span><span class="chip">G = <b id="Gl">–</b></span><span class="chip">B = <b id="Bl">–</b></span></div>
+  <p class="caveat">Two channels are negative, one is above 1. The point is far outside the sRGB cube — this is olo's fingerprint.</p>
+
+  <h2>Two ways down to a screen</h2>
+  <p><b>Clip.</b> Set negatives to 0, cap positives at 1, apply the sRGB transfer. Cheap and lossy; hue drifts hard toward pure green.</p>
+  <p><b>Desaturate along the achromatic axis.</b> Add the most-negative channel to every channel (this is equivalent to mixing with a bit of white until the point re-enters the cube), normalize, then gamma-encode. Preserves the direction; sacrifices saturation.</p>
+
+  <hr>
+  <footer>
+    Matrix values from the standard CIE / IEC 61966-2-1 references. Method after Fairman/Brill and Hunt.
+    Source: <a href="https://github.com/eagnespuerto/web-olo">github.com/eagnespuerto/web-olo</a>.
+  </footer>
+</main>
+
+<script>
+  // 3x3 matrix multiply times 3-vector
+  const mv = (M, v) => M.map(r => r[0]*v[0] + r[1]*v[1] + r[2]*v[2]);
+
+  // Hunt-Pointer-Estevez (D65 normalized) LMS → XYZ, i.e. inverse of HPE
+  const LMS_to_XYZ = [
+    [ 1.86006661, -1.12948008,  0.21989735],
+    [ 0.36122292,  0.63881308, -0.00000657],
+    [ 0.00000000,  0.00000000,  1.08908734],
+  ];
+
+  // XYZ → linear sRGB (Bradford-adapted D65)
+  const XYZ_to_lRGB = [
+    [ 3.2406, -1.5372, -0.4986],
+    [-0.9689,  1.8758,  0.0415],
+    [ 0.0557, -0.2040,  1.0570],
+  ];
+
+  // sRGB gamma encoding
+  const enc = c => {
+    c = Math.min(1, Math.max(0, c));
+    return c <= 0.0031308 ? 12.92*c : 1.055*Math.pow(c, 1/2.4) - 0.055;
+  };
+  const hex = ([r,g,b]) => '#' + [r,g,b].map(x =>
+    Math.round(x*255).toString(16).padStart(2,'0')).join('').toUpperCase();
+
+  // === compute ===
+  const LMS = [0, 1, 0];               // M-only stimulation
+  const XYZ = mv(LMS_to_XYZ, LMS);
+  const lin = mv(XYZ_to_lRGB, XYZ);    // out-of-gamut linear sRGB
+
+  // (1) naive clip
+  const clipped = lin.map(enc);
+
+  // (2) desaturate along the white axis: add most-negative to all channels,
+  // then normalize so max = 1, then gamma-encode
+  const shift = Math.max(0, -Math.min(...lin));
+  const shifted = lin.map(c => c + shift);
+  const norm = Math.max(...shifted, 1);
+  const mapped = shifted.map(c => enc(c / norm));
+
+  // === render ===
+  const set = (id, v) => document.getElementById(id).textContent = v;
+  set('X', XYZ[0].toFixed(4));
+  set('Y', XYZ[1].toFixed(4));
+  set('Z', XYZ[2].toFixed(4));
+  set('Rl', lin[0].toFixed(3));
+  set('Gl', lin[1].toFixed(3));
+  set('Bl', lin[2].toFixed(3));
+
+  const c1 = hex(clipped), c2 = hex(mapped);
+  document.getElementById('fill-clipped').style.background = c1;
+  document.getElementById('fill-mapped').style.background = c2;
+  set('hex-clipped', c1);
+  set('hex-mapped', c2);
+</script>
+</body>
+</html>
