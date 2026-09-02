@@ -39,6 +39,15 @@
   .sw .meta { padding: 12px 14px; font-family: var(--mono); font-size: 13px; color: var(--muted); }
   .sw .meta b { color: var(--ink); font-weight: 600; display: block; margin-bottom: 2px; font-family: var(--sans); font-size: 14px; }
   .caveat { font-size: 13px; color: var(--muted); margin-top: 4px; }
+  #gamut-table { display: block; overflow-x: auto; margin: 12px 0; border: 1px solid var(--rule); border-radius: 10px; }
+  #gamut-table table { border-collapse: collapse; width: 100%; font-family: var(--mono); font-size: 12.5px; }
+  #gamut-table th, #gamut-table td { text-align: right; padding: 8px 12px; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+  #gamut-table th { text-align: left; color: var(--muted); font-weight: 600; letter-spacing: 0.04em; background: var(--panel); }
+  #gamut-table td:first-child { text-align: left; color: var(--muted); }
+  #gamut-table tr:last-child td { border-bottom: 0; }
+  #gamut-table .neg { color: #ff6b6b; }
+  #gamut-table .over { color: #ffb84d; }
+  code { font-family: var(--mono); font-size: 92%; color: var(--muted); }
   pre.math {
     font-family: var(--mono); font-size: 12.5px; line-height: 1.5;
     background: var(--panel); border: 1px solid var(--rule); border-radius: 10px;
@@ -97,6 +106,34 @@
 [  0.0557  -0.2040   1.0570 ]</pre>
   <div class="row"><span class="chip">R = <b id="Rl">–</b></span><span class="chip">G = <b id="Gl">–</b></span><span class="chip">B = <b id="Bl">–</b></span></div>
   <p class="caveat">Two channels are negative, one is above 1. The point is far outside the sRGB cube — this is olo's fingerprint.</p>
+
+  <h2>Wider gamuts</h2>
+  <p>sRGB is a narrow triangle inside the horseshoe of visible chromaticities. Display P3, Rec. 2020, Adobe RGB, and ProPhoto RGB each stretch the triangle further out. Running olo's XYZ through each space's matrix shows how far outside each one it still lies — and if your display is wide-gamut, the P3 and Rec.2020 swatches below will look measurably more saturated than the sRGB ones above.</p>
+
+  <div class="swatches three">
+    <div class="sw">
+      <div class="fill" id="fill-p3"></div>
+      <div class="meta"><b>Display P3</b><span id="hex-p3">–</span></div>
+    </div>
+    <div class="sw">
+      <div class="fill" id="fill-r2020"></div>
+      <div class="meta"><b>Rec. 2020</b><span id="hex-r2020">–</span></div>
+    </div>
+    <div class="sw">
+      <div class="fill" id="fill-adobe"></div>
+      <div class="meta"><b>Adobe RGB</b><span id="hex-adobe">–</span></div>
+    </div>
+  </div>
+  <p class="caveat">Swatches are drawn via CSS <code>color()</code> in each space; on a P3 or Rec.2020 display they render at their native chroma, on an sRGB display they clip back into sRGB.</p>
+
+  <h2>How far out of gamut is olo, per space?</h2>
+  <p>Same XYZ, different primaries. Any negative or above-1 channel means olo lies outside that space's cube. The wider the gamut, the smaller the excursion — but no display standard swallows it whole.</p>
+  <div id="gamut-table"></div>
+
+  <h2>Encodings, not gamuts</h2>
+  <p><b>ICtCp</b> (Rec. 2100). A perceptually uniform coding built from LMS → PQ nonlinearity → orthogonal I/Ct/Cp. It isn't a wider gamut than Rec.2020, but it separates intensity from chroma more evenly than YCbCr, so chroma-subsampled HDR loses less of colors like olo. Computed values below.</p>
+  <div class="row"><span class="chip">I = <b id="ictcpI">–</b></span><span class="chip">C<sub>t</sub> = <b id="ictcpCt">–</b></span><span class="chip">C<sub>p</sub> = <b id="ictcpCp">–</b></span></div>
+  <p><b>xvYCC</b> (IEC 61966-2-4). Rec.709 primaries, but the YCbCr signal is allowed to swing outside 0–1 in linear RGB (roughly −0.5 to 1.5), letting the wire carry out-of-gamut colors that a wide-gamut display could later render. It buys coding headroom, not a wider triangle — olo's linear R of −4.6 blows past even xvYCC's extended range.</p>
 
   <h2>Three ways down to a screen</h2>
   <p><b>Clip.</b> Set negatives to 0, cap positives at 1, apply the sRGB transfer. Cheap and lossy; hue drifts hard toward pure green.</p>
@@ -214,6 +251,112 @@
   set('okL', L0.toFixed(3));
   set('okC', Cmax.toFixed(3));
   set('okH', ((h*180/Math.PI + 360) % 360).toFixed(1));
+
+  // === Wider gamut spaces ===
+  // All matrices XYZ (D65) → linear RGB, except ProPhoto which needs Bradford D65→D50 first.
+  const XYZ_to_P3 = [
+    [ 2.4934969, -0.9313836, -0.4027108],
+    [-0.8294890,  1.7626641,  0.0236247],
+    [ 0.0358458, -0.0761724,  0.9568845],
+  ];
+  const XYZ_to_R2020 = [
+    [ 1.7166512, -0.3556708, -0.2533663],
+    [-0.6666844,  1.6164812,  0.0157685],
+    [ 0.0176399, -0.0427706,  0.9421031],
+  ];
+  const XYZ_to_Adobe = [
+    [ 2.0413690, -0.5649464, -0.3446944],
+    [-0.9692660,  1.8760108,  0.0415560],
+    [ 0.0134474, -0.1183897,  1.0154096],
+  ];
+  const XYZ_to_ACEScg = [
+    [ 1.6410234, -0.3248033, -0.2364247],
+    [-0.6636629,  1.6153316,  0.0167563],
+    [ 0.0117219, -0.0082844,  0.9883949],
+  ];
+  const Bradford_D65_to_D50 = [
+    [ 1.0479298,  0.0229407, -0.0501610],
+    [ 0.0296278,  0.9904344, -0.0170879],
+    [-0.0092435,  0.0150574,  0.7521537],
+  ];
+  const XYZ_D50_to_ProPhoto = [
+    [ 1.3459433, -0.2556075, -0.0511118],
+    [-0.5445989,  1.5081673,  0.0205351],
+    [ 0.0000000,  0.0000000,  1.2118128],
+  ];
+
+  const XYZ_D50 = mv(Bradford_D65_to_D50, XYZ);
+  const perSpace = {
+    'sRGB':        mv(XYZ_to_lRGB,   XYZ),
+    'Display P3':  mv(XYZ_to_P3,     XYZ),
+    'Adobe RGB':   mv(XYZ_to_Adobe,  XYZ),
+    'Rec. 2020':   mv(XYZ_to_R2020,  XYZ),
+    'ACEScg':      mv(XYZ_to_ACEScg, XYZ),
+    'ProPhoto':    mv(XYZ_D50_to_ProPhoto, XYZ_D50),
+  };
+
+  // white-axis gamut map for arbitrary space (already used above for sRGB)
+  const whiteMap = lin => {
+    const s = Math.max(0, -Math.min(...lin));
+    const shifted = lin.map(c => c + s);
+    const m = Math.max(...shifted, 1);
+    return shifted.map(c => c / m);
+  };
+
+  // CSS color() rendering for wide-gamut swatches
+  const cssColor = (space, lin) => {
+    const m = whiteMap(lin);
+    return `color(${space} ${m[0].toFixed(4)} ${m[1].toFixed(4)} ${m[2].toFixed(4)})`;
+  };
+  const fmtWideHex = lin => {
+    // For a label, gamma-encode the mapped values (sRGB transfer approximates most 2.2-ish spaces well enough for a hex tag)
+    const m = whiteMap(lin);
+    return hex(m.map(enc));
+  };
+
+  document.getElementById('fill-p3').style.background    = cssColor('display-p3', perSpace['Display P3']);
+  document.getElementById('fill-r2020').style.background = cssColor('rec2020',    perSpace['Rec. 2020']);
+  document.getElementById('fill-adobe').style.background = cssColor('a98-rgb',    perSpace['Adobe RGB']);
+  set('hex-p3',    fmtWideHex(perSpace['Display P3']));
+  set('hex-r2020', fmtWideHex(perSpace['Rec. 2020']));
+  set('hex-adobe', fmtWideHex(perSpace['Adobe RGB']));
+
+  // Table of raw linear values per space
+  const rows = Object.entries(perSpace).map(([name, v]) => {
+    const cell = c => {
+      const cls = c < 0 ? ' class="neg"' : (c > 1 ? ' class="over"' : '');
+      return `<td${cls}>${c.toFixed(3)}</td>`;
+    };
+    return `<tr><td>${name}</td>${v.map(cell).join('')}</tr>`;
+  }).join('');
+  document.getElementById('gamut-table').innerHTML =
+    `<table><thead><tr><th>Space</th><th>R</th><th>G</th><th>B</th></tr></thead><tbody>${rows}</tbody></table>`;
+
+  // === ICtCp (Rec.2100) ===
+  // XYZ (D65) → LMS (Rec.2100 crosstalk-mixed cone response)
+  const XYZ_to_LMS_2100 = [
+    [ 0.3592832590, 0.6976051147, -0.0358915878],
+    [-0.1920808463, 1.1004767970,  0.0753748213],
+    [ 0.0070797844, 0.0748396662,  0.8433265669],
+  ];
+  // PQ (SMPTE ST 2084) nonlinearity, referred to 10,000 nits — for a normalized XYZ these values will be tiny
+  const pq = L => {
+    L = Math.max(0, L);
+    const m1 = 0.1593017578125, m2 = 78.84375, c1 = 0.8359375, c2 = 18.8515625, c3 = 18.6875;
+    const Lm1 = Math.pow(L, m1);
+    return Math.pow((c1 + c2 * Lm1) / (1 + c3 * Lm1), m2);
+  };
+  const LMS_2100 = mv(XYZ_to_LMS_2100, XYZ);
+  const LMSp = LMS_2100.map(pq);       // one channel is negative → PQ clamps to 0; still informative
+  const LMSp_to_ICtCp = [
+    [ 0.5,               0.5,              0        ],
+    [ 1.61376953125,    -3.323486328125,   1.709716796875],
+    [ 4.378173828125,   -4.24560546875,   -0.132568359375],
+  ];
+  const ICtCp = mv(LMSp_to_ICtCp, LMSp);
+  set('ictcpI',  ICtCp[0].toFixed(4));
+  set('ictcpCt', ICtCp[1].toFixed(4));
+  set('ictcpCp', ICtCp[2].toFixed(4));
 </script>
 </body>
 </html>
