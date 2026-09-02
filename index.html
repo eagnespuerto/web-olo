@@ -32,6 +32,8 @@
   p { margin: 10px 0; }
   .lede { color: var(--muted); font-size: 17px; margin-bottom: 32px; }
   .swatches { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin: 20px 0 8px; }
+  .swatches.three { grid-template-columns: repeat(3, 1fr); }
+  @media (max-width: 620px) { .swatches.three { grid-template-columns: 1fr; } }
   .sw { border-radius: 12px; overflow: hidden; border: 1px solid var(--rule); background: var(--panel); }
   .sw .fill { height: 140px; }
   .sw .meta { padding: 12px 14px; font-family: var(--mono); font-size: 13px; color: var(--muted); }
@@ -59,17 +61,21 @@
   <p class="lede">In April 2025, Berkeley researchers stimulated a single cone class in the human retina and reported a color no natural light can produce. This page approximates it the only way a screen can — by running the cone response through the standard CIE and sRGB matrix chain, then honestly showing what falls off the edge of the gamut.</p>
 
   <h2>The approximation</h2>
-  <div class="swatches">
+  <div class="swatches three">
     <div class="sw">
       <div class="fill" id="fill-clipped"></div>
       <div class="meta"><b>Naive clip</b><span id="hex-clipped">#000000</span></div>
     </div>
     <div class="sw">
       <div class="fill" id="fill-mapped"></div>
-      <div class="meta"><b>Gamut-mapped</b><span id="hex-mapped">#000000</span></div>
+      <div class="meta"><b>Gamut-mapped (white axis)</b><span id="hex-mapped">#000000</span></div>
+    </div>
+    <div class="sw">
+      <div class="fill" id="fill-oklab"></div>
+      <div class="meta"><b>Max chroma (Oklab, same hue)</b><span id="hex-oklab">#000000</span></div>
     </div>
   </div>
-  <p class="caveat">Neither swatch is olo. The real color sits outside every triangle your display can draw. The right swatch is what remains after we slide the point back into sRGB along the white axis — desaturated, but pointing the same way.</p>
+  <p class="caveat">None of these is olo. The real color sits outside every triangle your display can draw. The middle swatch slides the point in along the white axis. The right swatch preserves that swatch's Oklab hue and pushes chroma to the sRGB boundary — the most saturated appearance of olo your display can produce.</p>
 
   <h2>Cone stimulus</h2>
   <p>The Berkeley team hit only medium-wavelength (M) cones, leaving L and S dark. In LMS cone space this is a basis vector:</p>
@@ -92,9 +98,12 @@
   <div class="row"><span class="chip">R = <b id="Rl">–</b></span><span class="chip">G = <b id="Gl">–</b></span><span class="chip">B = <b id="Bl">–</b></span></div>
   <p class="caveat">Two channels are negative, one is above 1. The point is far outside the sRGB cube — this is olo's fingerprint.</p>
 
-  <h2>Two ways down to a screen</h2>
+  <h2>Three ways down to a screen</h2>
   <p><b>Clip.</b> Set negatives to 0, cap positives at 1, apply the sRGB transfer. Cheap and lossy; hue drifts hard toward pure green.</p>
-  <p><b>Desaturate along the achromatic axis.</b> Add the most-negative channel to every channel (this is equivalent to mixing with a bit of white until the point re-enters the cube), normalize, then gamma-encode. Preserves the direction; sacrifices saturation.</p>
+  <p><b>Desaturate along the achromatic axis.</b> Add the most-negative channel to every channel (equivalent to mixing with a bit of white until the point re-enters the cube), normalize, then gamma-encode. Preserves direction; sacrifices saturation.</p>
+  <p><b>Max chroma at same hue.</b> Take the gamut-mapped result, convert to Oklab, hold hue fixed, then bisect chroma outward until we hit the sRGB cube. This lands on the same hex — the white-axis slide already put us on the cube boundary. Any further sliding trades hue for saturation.</p>
+  <div class="row"><span class="chip">L = <b id="okL">–</b></span><span class="chip">C<sub>max</sub> = <b id="okC">–</b></span><span class="chip">h° = <b id="okH">–</b></span></div>
+  <p class="caveat">The linear-sRGB point sits at (0, 1, 0.6415) — the R channel is pinned at zero, meaning we're on the R=0 face of the sRGB cube. Both HSL saturation (100%) and Oklab chroma agree: <b>#00FFD2 is already the most saturated appearance of olo an sRGB display can produce at this luminance</b>.</p>
 
   <hr>
   <footer>
@@ -153,11 +162,58 @@
   set('Gl', lin[1].toFixed(3));
   set('Bl', lin[2].toFixed(3));
 
-  const c1 = hex(clipped), c2 = hex(mapped);
+  // === Oklab-based max-chroma at same hue ===
+  // linear sRGB → Oklab (Björn Ottosson, 2020)
+  const lin_to_oklab = ([r,g,b]) => {
+    const l = 0.4122214708*r + 0.5363325363*g + 0.0514459929*b;
+    const m = 0.2119034982*r + 0.6806995451*g + 0.1073969566*b;
+    const s = 0.0883024619*r + 0.2817188376*g + 0.6299787005*b;
+    const l_ = Math.cbrt(l), m_ = Math.cbrt(m), s_ = Math.cbrt(s);
+    return [
+      0.2104542553*l_ + 0.7936177850*m_ - 0.0040720468*s_,
+      1.9779984951*l_ - 2.4285922050*m_ + 0.4505937099*s_,
+      0.0259040371*l_ + 0.7827717662*m_ - 0.8086757660*s_,
+    ];
+  };
+  const oklab_to_lin = ([L,a,b]) => {
+    const l_ = L + 0.3963377774*a + 0.2158037573*b;
+    const m_ = L - 0.1055613458*a - 0.0638541728*b;
+    const s_ = L - 0.0894841775*a - 1.2914855480*b;
+    const l = l_**3, m = m_**3, s = s_**3;
+    return [
+      4.0767416621*l - 3.3077115913*m + 0.2309699292*s,
+      -1.2684380046*l + 2.6097574011*m - 0.3413193965*s,
+      -0.0041960863*l - 0.7034186147*m + 1.7076147010*s,
+    ];
+  };
+
+  // Take the shifted, normalized linear point (in-gamut version of olo)
+  const startLin = shifted.map(c => c / norm);        // (0, 1, 0.6415)
+  const [L0, a0, b0] = lin_to_oklab(startLin);
+  const h = Math.atan2(b0, a0);                       // hue angle (rad)
+
+  // Bisect chroma outward on the line (L0, C*cos h, C*sin h) until we exit sRGB
+  const inGamut = ([r,g,b]) => r>=-1e-4 && g>=-1e-4 && b>=-1e-4 && r<=1+1e-4 && g<=1+1e-4 && b<=1+1e-4;
+  let lo = 0, hi = 0.5;                               // Oklab chroma of pure sRGB primaries is ~0.32; 0.5 is a safe upper bound
+  for (let i = 0; i < 40; i++) {
+    const C = (lo + hi) / 2;
+    const p = oklab_to_lin([L0, C*Math.cos(h), C*Math.sin(h)]);
+    if (inGamut(p)) lo = C; else hi = C;
+  }
+  const Cmax = lo;
+  const maxLin = oklab_to_lin([L0, Cmax*Math.cos(h), Cmax*Math.sin(h)]);
+  const okBoosted = maxLin.map(enc);
+
+  const c1 = hex(clipped), c2 = hex(mapped), c3 = hex(okBoosted);
   document.getElementById('fill-clipped').style.background = c1;
   document.getElementById('fill-mapped').style.background = c2;
+  document.getElementById('fill-oklab').style.background = c3;
   set('hex-clipped', c1);
   set('hex-mapped', c2);
+  set('hex-oklab', c3);
+  set('okL', L0.toFixed(3));
+  set('okC', Cmax.toFixed(3));
+  set('okH', ((h*180/Math.PI + 360) % 360).toFixed(1));
 </script>
 </body>
 </html>
